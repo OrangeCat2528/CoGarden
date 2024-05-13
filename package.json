@@ -1,0 +1,18 @@
+{
+  "name": "cogarden-for-raspberrypi",
+  "version": "0.0.2",
+  "description": "CoGraden API Endpoint for Raspberry Pi",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Farrel Naufal Pramono",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.15.2",
+    "express": "^4.19.2",
+    "mysql": "^2.18.1",
+    "ping": "^0.4.4",
+    "systeminformation": "^5.22.8"
+  }
+}
