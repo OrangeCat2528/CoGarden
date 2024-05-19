@@ -31,7 +31,7 @@
 #### Input New Data (ESP32)
 
 ```http
-  GET /cogarden/add
+GET /cogarden/add
 ```
 
 | Parameter | Type     | Description                |
@@ -43,13 +43,13 @@
 #### Get Realtime Data
 
 ```http
-  GET /cogarden/realtime
+GET /cogarden/realtime
 ```
 
 #### Get Recap Data
 
 ```http
-  GET /cogarden/recap
+GET /cogarden/recap
 ```
 | Parameter | Type     | Description                |
 | :-------- | :------- | :------------------------- |
