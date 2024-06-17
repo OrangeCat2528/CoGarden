@@ -1,148 +1,118 @@
 #include "DHT.h"
 #include <LiquidCrystal_I2C.h>
-#include <SPI.h>
-#include <LoRa.h>
+#include "LoRa_E220.h"
+#include <SoftwareSerial.h>
 
 #define DHTPIN 7 
 #define DHTTYPE DHT22 // DHT 22 (AM2302)
 
-#define LORA_NSS 10
-#define LORA_RESET 9
-#define LORA_DIO0 3
-
-#define LORA_FREQ 915E6
-#define LORA_TX_POWER 23 // Daya transmisi LoRa (dBm)
-#define LORA_BANDWIDTH 125E3 // Bandwidth LoRa (Hz)
-#define LORA_SPREADING_FACTOR 8 // Spreading Factor LoRa
-
-#define ENDPOINT "http://10.10.4.115:3000/cogarden"
+#define LIGHTSENSORPIN A1 // Ambient light sensor reading
+#define DESTINATION_ADDL 20
 
 const int soilDry = 239;
 const int soilWet = 595;
 
 DHT dht(DHTPIN, DHTTYPE);
-LiquidCrystal_I2C lcd(0x27, 16, 2); // Inisialisasi LCD dengan alamat 0x3F dan dimensi 16x2
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Initialize LCD with address 0x27 and dimensions 16x2
 
-unsigned long previousMillis = 0; // Variabel untuk menyimpan waktu sebelumnya
-int displayMode = 0; // Variabel untuk melacak kondisi yang akan ditampilkan
+SoftwareSerial mySerial(2, 3); // RX, TX
+LoRa_E220 e220ttl(&mySerial);
 
-float humidity, temperature;
+unsigned long previousMillis = 0; // Variable to store previous time for LCD update
+unsigned long previousLoRaMillis = 0; // Variable to store previous time for LoRa transmission
+int displayMode = 0; // Variable to track which condition to display
+
+float humidity, temperature, lightPercentage;
 int soilHumidityPercentage;
-
-bool loraConnected = false;
-unsigned long loraLastSent = 0;
+bool loraError = false;
 
 void setup() {
   Serial.begin(9600);
-  while (!Serial);
+  delay(500);
 
-  // Inisialisasi LCD
+  // Initialize LCD
   lcd.init();
   lcd.backlight();
 
-  // Periksa koneksi pin LoRa
-  checkLoRaPinConnection();
-
-  if (loraConnected) {
-    Serial.println("Koneksi LoRa berhasil!");
-  } else {
-    Serial.println("Koneksi LoRa gagal!");
-  }
-
   dht.begin();
+  e220ttl.begin();
 }
 
 void loop() {
-  unsigned long currentMillis = millis(); // Waktu saat ini dalam milidetik
+  unsigned long currentMillis = millis(); // Current time in milliseconds
 
-  if (currentMillis - previousMillis >= 2000) { // Jika sudah 2 detik berlalu
-    previousMillis = currentMillis; // Perbarui waktu sebelumnya
-    displayMode = (displayMode + 1) % 3; // Ubah kondisi yang akan ditampilkan
+  if (currentMillis - previousMillis >= 2000) { // If 2 seconds have passed for LCD update
+    previousMillis = currentMillis; // Update previous time
+    displayMode = (displayMode + 1) % 4; // Change condition to display
 
-    // Baca data dari sensor
+    // Read data from sensors
     humidity = round(dht.readHumidity());
     temperature = round(dht.readTemperature());
     int soilHumidity = analogRead(A0);
     soilHumidityPercentage = map(soilHumidity, soilWet, soilDry, 0, 100);
     soilHumidityPercentage = constrain(soilHumidityPercentage, 0, 100);
+    
+    // Read light level and convert to percentage
+    float lightReading = analogRead(LIGHTSENSORPIN);
+    lightPercentage = (lightReading / 1023.0) * 100.0;
 
-    // Kirim data melalui LoRa jika terhubung
-    if (loraConnected && currentMillis - loraLastSent >= 100) {
-      loraLastSent = currentMillis;
-      sendLoRaMessage(ENDPOINT "?h=" + String((int)humidity) + "&sh=" + String((int)soilHumidityPercentage) + "&t=" + String((int)temperature));
+    lcd.setCursor((16 - 8) / 2, 0); // Center text on first line
+    lcd.print("CoGarden");
+
+    lcd.setCursor(0, 1); // Move to first column of second line
+    lcd.print("                "); // Clear second line
+
+    if (loraError) {
+      lcd.setCursor((16 - 9) / 2, 1); // Center "LoRa Error!" on second line
+      lcd.print("LoRa Error!");
+    } else {
+      switch (displayMode) {
+        case 0: // Display humidity
+          lcd.setCursor((16 - 13) / 2, 1); // Center text on second line
+          lcd.print("Humidity: ");
+          lcd.print(humidity);
+          lcd.print("%");
+          break;
+        case 1: // Display temperature
+          lcd.setCursor((19 - 15) / 2, 1); // Center text on second line
+          lcd.print("Temp: ");
+          lcd.print(temperature);
+          lcd.write(0xDF); // Degree Celsius character
+          lcd.print("C");
+          break;
+        case 2: // Display soil moisture
+          lcd.setCursor((24 - 16) / 2, 1); // Center text on second line
+          lcd.print("Soil: ");
+          lcd.print(soilHumidityPercentage);
+          lcd.print("%");
+          break;
+        case 3: // Display light level
+          lcd.setCursor((24 - 16) / 2, 1); // Center text on second line
+          lcd.print("Light: ");
+          lcd.print(lightPercentage);
+          lcd.print("%");
+          break;
+      }
     }
   }
 
-  lcd.setCursor((16 - 8) / 2, 0); // Memusatkan teks di baris pertama
-  lcd.print("CoGarden");
+  if (currentMillis - previousLoRaMillis >= 2000) { // If 2 seconds have passed for LoRa transmission
+    previousLoRaMillis = currentMillis; // Update previous time for LoRa
 
-  lcd.setCursor(0, 1); // Pindah ke baris kedua, kolom pertama
-  lcd.print("                "); // Menghapus baris kedua
+    // Create JSON formatted string
+    String jsonOutput = "{\"s\":\"" + String(humidity) + "\",\"sh\":\"" + String(soilHumidityPercentage) + "\",\"t\":\"" + String((int)temperature) + "\",\"light\":\"" + String(lightPercentage) + "\"}";
+    Serial.println(jsonOutput);
 
-switch (displayMode) {
-    case 0: // Tampilkan kelembaban
-      lcd.setCursor((16 - 13) / 2, 1); // Memusatkan teks di baris kedua
-      lcd.print("Humidity: ");
-      lcd.print(humidity);
-      lcd.print("%");
-      break;
-    case 1: // Tampilkan suhu
-      lcd.setCursor((19 - 15) / 2, 1); // Memusatkan teks di baris kedua
-      lcd.print("Temp: ");
-      lcd.print(temperature);
-      lcd.write(0xDF); // Karakter derajat Celsius
-      lcd.print("C");
-      break;
-    case 2: // Tampilkan kelembaban tanah
-      lcd.setCursor((24 - 16) / 2, 1); // Memusatkan teks di baris kedua
-      lcd.print("Soil: ");
-      lcd.print(soilHumidityPercentage);
-      lcd.print("%");
-      break;
+    // Send JSON string via LoRa
+    ResponseStatus rs = e220ttl.sendFixedMessage(0, DESTINATION_ADDL, 23, jsonOutput);
+    if (rs.code == 1) {
+      Serial.println("Pesan Successfully Sent! (" + jsonOutput + ")");
+      loraError = false;
+    } else {
+      Serial.println("Failed to send message: " + rs.getResponseDescription());
+      loraError = true;
+    }
   }
 
-  delay(200); // Penundaan 200 milidetik
-}
-
-void checkLoRaPinConnection() {
-  // Periksa koneksi pin NSS
-  pinMode(LORA_NSS, OUTPUT);
-  digitalWrite(LORA_NSS, HIGH);
-  if (digitalRead(LORA_NSS) != HIGH) {
-    Serial.println("Koneksi pin NSS LoRa tidak valid!");
-    return;
-  }
-
-  // Periksa koneksi pin RESET
-  pinMode(LORA_RESET, OUTPUT);
-  digitalWrite(LORA_RESET, LOW);
-  delay(10);
-  digitalWrite(LORA_RESET, HIGH);
-  if (digitalRead(LORA_RESET) != HIGH) {
-    Serial.println("Koneksi pin RESET LoRa tidak valid!");
-    return;
-  }
-
-  // Periksa koneksi pin DIO0
-  pinMode(LORA_DIO0, INPUT);
-  if (digitalRead(LORA_DIO0) != LOW) {
-    Serial.println("Koneksi pin DIO0 LoRa tidak valid!");
-    return;
-  }
-
-  // Inisialisasi LoRa
-  LoRa.setPins(LORA_NSS, LORA_RESET, LORA_DIO0);
-  if (!LoRa.begin(LORA_FREQ)) {
-    Serial.println("Inisialisasi LoRa gagal!");
-    return;
-  }
-
-  loraConnected = true;
-}
-
-void sendLoRaMessage(String message) {
-  LoRa.beginPacket();
-  LoRa.print(message);
-  LoRa.endPacket();
-  Serial.println("Pesan terkirim: " + message);
+  delay(200); // 200 milliseconds delay
 }
