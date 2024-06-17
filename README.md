@@ -26,40 +26,9 @@
 - ESP32
 - Long Range Module RFM9x
 
-## ⚙️ API Endpoints for Raspberry Pi
-
-#### Input New Data (ESP32)
-
-```http
-GET /cogarden/add
-```
-
-| Parameter | Type     | Description                |
-| :-------- | :------- | :------------------------- |
-| `h` | `string` | Soil Humidity |
-| `sh` | `string` | Surroundings Humidity |
-| `t` | `string` | Temperature |
-
-#### Get Realtime Data
-
-```http
-GET /cogarden/realtime
-```
-
-#### Get Recap Data
-
-```http
-GET /cogarden/recap
-```
-| Parameter | Type     | Description                |
-| :-------- | :------- | :------------------------- |
-| `y` | `string` | Year |
-| `m` | `string` | Month |
-| `d` | `string` | Date |
-
 ## Project Used For
 
-- [WSEEC Competition](https://wsec.or.id/). 
+- [WSEEC Competition](https://wsec.or.id/) (Silver Medal)
 
 
 ## License
